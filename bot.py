@@ -124,6 +124,15 @@ def human_readable_size(size):
 def get_current_time():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+
+def build_unique_download_path(file_name: str, user_id: int, message_id: int) -> tuple[str, str]:
+    """Create a collision-safe local file path so parallel users never fight over the same file."""
+    safe_name = os.path.basename(file_name or "file.bin")
+    stem, ext = os.path.splitext(safe_name)
+    stem = stem[:80] if stem else "file"
+    unique_name = f"{stem}_u{int(user_id)}_m{int(message_id)}_{int(time.time() * 1000)}{ext}"
+    return unique_name, os.path.join(DOWNLOAD_DIR, unique_name)
+
 def format_bool_badge(value: bool) -> str:
     return "🟢 ON" if value else "🔴 OFF"
 
@@ -2483,8 +2492,8 @@ async def queue_worker(client: Client, worker_number: int):
 # ================== FAST DOWNLOAD LOGIC ==================
 
 async def process_tg_file(client, media, message, status_msg):
-    file_name = getattr(media, "file_name", f"file_{message.id}_{int(time.time())}")
-    file_path = os.path.join(DOWNLOAD_DIR, file_name)
+    incoming_name = getattr(media, "file_name", f"file_{message.id}_{int(time.time())}")
+    file_name, file_path = build_unique_download_path(incoming_name, message.from_user.id, message.id)
 
     try:
         progress_state = {"last_edit_at": 0, "last_text": "", "start": time.time(), "file_name": file_name}
@@ -2542,7 +2551,7 @@ async def process_url_file(client, url, message, status_msg):
     if not file_name or len(file_name) > 100:
         file_name = f"url_file_{int(time.time())}.bin"
         
-    file_path = os.path.join(DOWNLOAD_DIR, file_name)
+    file_name, file_path = build_unique_download_path(file_name, message.from_user.id, message.id)
 
     try:
         progress_state = {"last_edit_at": 0, "last_text": "", "start": time.time(), "file_name": file_name}
