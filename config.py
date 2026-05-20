@@ -56,10 +56,10 @@ DOWNLOAD_DIR = "downloads"
 DATABASE_FILE = "database.json"
 
 # Bot Info
-BOT_USERNAME = os.environ.get("BOT_USERNAME", "YourBot")
-SUPPORT_CHAT = os.environ.get("SUPPORT_CHAT", "")
-UPDATE_CHANNEL = os.environ.get("UPDATE_CHANNEL", "")
-WEB_BASE_URL = os.environ.get("WEB_BASE_URL", "").rstrip("/")
+BOT_USERNAME = os.environ.get("BOT_USERNAME", "Gofile_upload_ibot")
+SUPPORT_CHAT = os.environ.get("SUPPORT_CHAT", "ML_Files")
+UPDATE_CHANNEL = os.environ.get("UPDATE_CHANNEL", "Movie_loverzz")
+WEB_BASE_URL = os.environ.get("WEB_BASE_URL", "https://go-file-823552364cc6.herokuapp.com/").rstrip("/")
 ADMIN_DASHBOARD_TOKEN = os.environ.get("ADMIN_DASHBOARD_TOKEN", "")
 
 # Messages
