@@ -72,6 +72,47 @@ ADMIN_TEXT_COMMANDS = [
 
 # ================== HELPER FUNCTIONS ==================
 
+
+async def safe_edit_message(status_msg: Message, text: str, **kwargs):
+    try:
+        await status_msg.edit_text(text, **kwargs)
+    except FloodWait as e:
+        await asyncio.sleep(getattr(e, "value", 1))
+        try:
+            await status_msg.edit_text(text, **kwargs)
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+def build_progress_bar(percent: float, width: int = 12) -> str:
+    percent = max(0.0, min(100.0, percent))
+    filled = int((percent / 100) * width)
+    return "■" * filled + "□" * (width - filled)
+
+def format_eta(seconds: float) -> str:
+    if seconds <= 0 or seconds == float("inf"):
+        return "--"
+    m, s = divmod(int(seconds), 60)
+    h, m = divmod(m, 60)
+    if h > 0:
+        return f"{h}h {m}m {s}s"
+    if m > 0:
+        return f"{m}m {s}s"
+    return f"{s}s"
+
+async def maybe_edit_progress(status_msg: Message, state: dict, text: str, min_interval: float = 2.5):
+    now = time.time()
+    if now - state.get("last_edit_at", 0) < min_interval and not state.get("force", False):
+        return
+    if text == state.get("last_text") and not state.get("force", False):
+        return
+    state["last_text"] = text
+    state["last_edit_at"] = now
+    state["force"] = False
+    await safe_edit_message(status_msg, text)
+
+
 def human_readable_size(size):
     for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
         if size < 1024:
@@ -2445,14 +2486,38 @@ async def process_tg_file(client, media, message, status_msg):
     file_path = os.path.join(DOWNLOAD_DIR, file_name)
 
     try:
-        await status_msg.edit_text(
-            f"⬇️ **Downloading...**\n\n"
-            f"📄 **File:** `{file_name}`\n"
-            f"📦 **Size:** `{human_readable_size(media.file_size)}`\n"
-            f"⚡ **Mode:** Native Stream"
+        progress_state = {"last_edit_at": 0, "last_text": "", "start": time.time(), "file_name": file_name}
+        await safe_edit_message(
+            status_msg,
+            f"🚀 **Live Status** 🚀\n"
+            f"⚜️ **Task:** `{file_name}`\n"
+            f"🌀 **Status:** 📡 Downloading...\n"
+            f"📊 `[□□□□□□□□□□□□]` 0.0%\n"
+            f"📡 **Progress:** 0 B / {human_readable_size(media.file_size)}\n"
+            f"⚡ **Speed:** -- | ETA: --\n"
+            f"⏱️ **Elapsed:** 0s | /cancel_tg_{message.from_user.id}"
         )
 
-        await client.download_media(message, file_path)
+        async def tg_progress(current, total):
+            elapsed = max(time.time() - progress_state["start"], 0.001)
+            speed = current / elapsed
+            eta = (total - current) / speed if speed > 0 else float("inf")
+            percent = (current / total) * 100 if total else 0
+            bar = build_progress_bar(percent)
+            txt = (
+                f"🚀 **Live Status** 🚀\n"
+                f"⚜️ **Task:** `{progress_state['file_name']}`\n"
+                f"🌀 **Status:** 📡 Downloading...\n"
+                f"📊 `[{bar}]` {percent:.1f}%\n"
+                f"📡 **Progress:** {human_readable_size(current)} / {human_readable_size(total)}\n"
+                f"⚡ **Speed:** {human_readable_size(speed)}/s | ETA: {format_eta(eta)}\n"
+                f"⏱️ **Elapsed:** {int(elapsed)}s | /cancel_tg_{message.from_user.id}"
+            )
+            await maybe_edit_progress(status_msg, progress_state, txt)
+
+        await client.download_media(message, file_path, progress=tg_progress)
+        progress_state["force"] = True
+        await tg_progress(media.file_size, media.file_size)
 
         await upload_handler(
             client, message, status_msg,
@@ -2479,21 +2544,45 @@ async def process_url_file(client, url, message, status_msg):
     file_path = os.path.join(DOWNLOAD_DIR, file_name)
 
     try:
-        await status_msg.edit_text(
-            "⬇️ **Fast Downloading...**\n\n"
-            f"🔗 **URL:** `{url[:50]}...`\n"
-            "⏳ **Mode:** Optimized HTTP Stream"
+        progress_state = {"last_edit_at": 0, "last_text": "", "start": time.time(), "file_name": file_name}
+        await safe_edit_message(
+            status_msg,
+            "🚀 **Live Status** 🚀\n"
+            f"⚜️ **Task:** `{file_name}`\n"
+            "🌀 **Status:** 📡 Downloading...\n"
+            "📊 `[□□□□□□□□□□□□]` 0.0%\n"
+            "📡 **Progress:** 0 B / Unknown\n"
+            "⚡ **Speed:** -- | ETA: --\n"
+            f"⏱️ **Elapsed:** 0s | /cancel_tg_{message.from_user.id}"
         )
 
         connector = aiohttp.TCPConnector(limit=None, ttl_dns_cache=300)
         async with aiohttp.ClientSession(connector=connector) as session:
             async with session.get(url, timeout=None) as response:
                 if response.status != 200:
-                    return await status_msg.edit_text(f"❌ URL Error: {response.status}")
-                
+                    return await safe_edit_message(status_msg, f"❌ URL Error: {response.status}")
+                total = int(response.headers.get("Content-Length", 0) or 0)
+                downloaded = 0
                 with open(file_path, "wb") as f:
                     async for chunk in response.content.iter_chunked(CHUNK_SIZE):
                         f.write(chunk)
+                        downloaded += len(chunk)
+                        elapsed = max(time.time() - progress_state["start"], 0.001)
+                        speed = downloaded / elapsed
+                        eta = (total - downloaded) / speed if speed > 0 and total > 0 else float("inf")
+                        percent = (downloaded / total) * 100 if total > 0 else 0
+                        bar = build_progress_bar(percent)
+                        total_text = human_readable_size(total) if total > 0 else "Unknown"
+                        txt = (
+                            "🚀 **Live Status** 🚀\n"
+                            f"⚜️ **Task:** `{progress_state['file_name']}`\n"
+                            "🌀 **Status:** 📡 Downloading...\n"
+                            f"📊 `[{bar}]` {percent:.1f}%\n"
+                            f"📡 **Progress:** {human_readable_size(downloaded)} / {total_text}\n"
+                            f"⚡ **Speed:** {human_readable_size(speed)}/s | ETA: {format_eta(eta)}\n"
+                            f"⏱️ **Elapsed:** {int(elapsed)}s | /cancel_tg_{message.from_user.id}"
+                        )
+                        await maybe_edit_progress(status_msg, progress_state, txt)
 
         final_size = os.path.getsize(file_path)
         
@@ -2521,7 +2610,7 @@ async def upload_handler(client, message, status_msg, file_path, file_size, file
             "🚀 **Optimized Buffer Active**"
         )
         
-        link = await upload_to_gofile(file_path)
+        link = await upload_to_gofile(file_path, status_msg=status_msg, file_name=file_name)
 
         if not link:
             return await status_msg.edit_text("❌ **Upload Failed.**\nGoFile servers might be busy.")
@@ -2596,12 +2685,51 @@ async def upload_handler(client, message, status_msg, file_path, file_size, file
 
 # ================== GOFILE UPLOADER ==================
 
-async def upload_to_gofile(path):
+class ProgressFileReader:
+    def __init__(self, file_obj, total_size: int, on_progress):
+        self.file_obj = file_obj
+        self.total_size = max(1, int(total_size))
+        self.on_progress = on_progress
+        self.read_bytes = 0
+
+    def read(self, size=-1):
+        chunk = self.file_obj.read(size)
+        if chunk:
+            self.read_bytes += len(chunk)
+            if self.on_progress:
+                self.on_progress(self.read_bytes, self.total_size)
+        return chunk
+
+
+async def upload_to_gofile(path, status_msg: Message = None, file_name: str = "file"):
+
     mime_type, _ = mimetypes.guess_type(path)
     if mime_type is None:
         mime_type = "application/octet-stream"
 
     connector = aiohttp.TCPConnector(limit=None, ttl_dns_cache=300)
+
+    total_size = os.path.getsize(path)
+    progress_state = {"last_edit_at": 0, "last_text": "", "start": time.time(), "file_name": file_name}
+    loop = asyncio.get_running_loop()
+
+    async def upload_progress(current, total):
+        elapsed = max(time.time() - progress_state["start"], 0.001)
+        speed = current / elapsed
+        eta = (total - current) / speed if speed > 0 else float("inf")
+        percent = (current / total) * 100 if total else 0
+        bar = build_progress_bar(percent)
+        txt = (
+            "🚀 **Live Status** 🚀\n"
+            f"⚜️ **Task:** `{progress_state['file_name']}`\n"
+            "🌀 **Status:** ☁️ Uploading...\n"
+            f"📊 `[{bar}]` {percent:.1f}%\n"
+            f"📡 **Progress:** {human_readable_size(current)} / {human_readable_size(total)}\n"
+            f"⚡ **Speed:** {human_readable_size(speed)}/s | ETA: {format_eta(eta)}\n"
+            f"⏱️ **Elapsed:** {int(elapsed)}s"
+        )
+        if status_msg:
+            await maybe_edit_progress(status_msg, progress_state, txt)
 
     for server in PRIORITIZED_SERVERS:
         try:
@@ -2609,8 +2737,15 @@ async def upload_to_gofile(path):
             
             async with aiohttp.ClientSession(connector=connector) as session:
                 with open(path, "rb") as f:
+                    progress_reader = ProgressFileReader(
+                        f,
+                        total_size,
+                        lambda current, total: loop.call_soon_threadsafe(
+                            asyncio.create_task, upload_progress(current, total)
+                        )
+                    )
                     data = aiohttp.FormData()
-                    data.add_field('file', f, filename=os.path.basename(path), content_type=mime_type)
+                    data.add_field('file', progress_reader, filename=os.path.basename(path), content_type=mime_type)
                     data.add_field('token', GOFILE_API_TOKEN)
                     
                     if GOFILE_FOLDER_ID:
