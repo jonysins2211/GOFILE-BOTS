@@ -4,6 +4,7 @@ import aiohttp
 import asyncio
 import time
 import mimetypes
+import io
 import csv
 import re
 import logging
@@ -2685,7 +2686,7 @@ async def upload_handler(client, message, status_msg, file_path, file_size, file
 
 # ================== GOFILE UPLOADER ==================
 
-class ProgressFileReader:
+class ProgressFileReader(io.IOBase):
     def __init__(self, file_obj, total_size: int, on_progress):
         self.file_obj = file_obj
         self.total_size = max(1, int(total_size))
@@ -2699,6 +2700,32 @@ class ProgressFileReader:
             if self.on_progress:
                 self.on_progress(self.read_bytes, self.total_size)
         return chunk
+
+    def readable(self):
+        return True
+
+    def seekable(self):
+        return self.file_obj.seekable()
+
+    def tell(self):
+        return self.file_obj.tell()
+
+    def seek(self, offset, whence=0):
+        return self.file_obj.seek(offset, whence)
+
+    def fileno(self):
+        return self.file_obj.fileno()
+
+    def close(self):
+        return self.file_obj.close()
+
+    @property
+    def closed(self):
+        return self.file_obj.closed
+
+    @property
+    def name(self):
+        return getattr(self.file_obj, "name", None)
 
 
 async def upload_to_gofile(path, status_msg: Message = None, file_name: str = "file"):
