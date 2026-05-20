@@ -33,7 +33,7 @@ def parse_required_channels() -> list:
  
 REQUIRED_FSUB_CHANNELS = parse_required_channels()
 # Default FSUB channel seed used at startup when not already configured in DB.
-DEFAULT_FSUB_CHANNEL = os.environ.get("DEFAULT_FSUB_CHANNEL", "@TOOLS_BOTS_KING").strip()
+DEFAULT_FSUB_CHANNEL = os.environ.get("DEFAULT_FSUB_CHANNEL", "@ML_Deals").strip()
 
 # Parse admin IDs
 ADMIN_IDS = [int(x) for x in os.environ.get("ADMIN_IDS", "").split() if x.isdigit()]
