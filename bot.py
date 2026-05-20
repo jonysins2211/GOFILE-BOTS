@@ -2707,8 +2707,6 @@ async def upload_to_gofile(path, status_msg: Message = None, file_name: str = "f
     if mime_type is None:
         mime_type = "application/octet-stream"
 
-    connector = aiohttp.TCPConnector(limit=None, ttl_dns_cache=300)
-
     total_size = os.path.getsize(path)
     progress_state = {"last_edit_at": 0, "last_text": "", "start": time.time(), "file_name": file_name}
     loop = asyncio.get_running_loop()
@@ -2731,11 +2729,12 @@ async def upload_to_gofile(path, status_msg: Message = None, file_name: str = "f
         if status_msg:
             await maybe_edit_progress(status_msg, progress_state, txt)
 
-    for server in PRIORITIZED_SERVERS:
-        try:
-            url = f"https://{server}.gofile.io/uploadfile"
-            
-            async with aiohttp.ClientSession(connector=connector) as session:
+    connector = aiohttp.TCPConnector(limit=None, ttl_dns_cache=300)
+    async with aiohttp.ClientSession(connector=connector) as session:
+        for server in PRIORITIZED_SERVERS:
+            try:
+                url = f"https://{server}.gofile.io/uploadfile"
+
                 with open(path, "rb") as f:
                     progress_reader = ProgressFileReader(
                         f,
@@ -2747,7 +2746,7 @@ async def upload_to_gofile(path, status_msg: Message = None, file_name: str = "f
                     data = aiohttp.FormData()
                     data.add_field('file', progress_reader, filename=os.path.basename(path), content_type=mime_type)
                     data.add_field('token', GOFILE_API_TOKEN)
-                    
+
                     if GOFILE_FOLDER_ID:
                         data.add_field('folderId', GOFILE_FOLDER_ID)
 
@@ -2756,9 +2755,9 @@ async def upload_to_gofile(path, status_msg: Message = None, file_name: str = "f
                             result = await response.json()
                             if result.get("status") == "ok":
                                 return result["data"]["downloadPage"]
-        except Exception as e:
-            logger.error(f"Server {server} failed: {e}")
-            continue
+            except Exception as e:
+                logger.error(f"Server {server} failed: {e}")
+                continue
             
     return None
 
