@@ -43,7 +43,9 @@ OWNER_ID = int(os.environ.get("OWNER_ID", ADMIN_IDS[0] if ADMIN_IDS else 0))
 
 # LIMITS
 MAX_FILE_SIZE = 50 * 1024 * 1024 * 1024  # 50GB
-CHUNK_SIZE = 4 * 1024 * 1024  # 4MB
+CHUNK_SIZE = int(os.environ.get("CHUNK_SIZE", 8 * 1024 * 1024))  # 8MB default (tunable)
+DOWNLOAD_QUEUE_WORKERS = int(os.environ.get("DOWNLOAD_QUEUE_WORKERS", 15))
+MAX_CONCURRENT_TRANSMISSIONS = int(os.environ.get("MAX_CONCURRENT_TRANSMISSIONS", 15))
 
 # GoFile Servers
 PRIORITIZED_SERVERS = [

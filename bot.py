@@ -53,12 +53,12 @@ app = Client(
     api_id=API_ID,
     api_hash=API_HASH,
     bot_token=BOT_TOKEN,
-    workers=10,
-    max_concurrent_transmissions=10
+    workers=max(10, MAX_CONCURRENT_TRANSMISSIONS),
+    max_concurrent_transmissions=MAX_CONCURRENT_TRANSMISSIONS
 )
 
 download_queue = Queue()
-MAX_CONCURRENT_QUEUE_WORKERS = 10
+MAX_CONCURRENT_QUEUE_WORKERS = max(1, DOWNLOAD_QUEUE_WORKERS)
 queue_worker_tasks = []
 shutdown_in_progress = False
 ADMIN_WIZARDS = {}
@@ -2567,7 +2567,7 @@ async def process_url_file(client, url, message, status_msg):
             f"⏱️ **Elapsed:** 0s | /cancel_tg_{message.from_user.id}"
         )
 
-        connector = aiohttp.TCPConnector(limit=None, ttl_dns_cache=300)
+        connector = aiohttp.TCPConnector(limit=0, ttl_dns_cache=300, enable_cleanup_closed=True)
         async with aiohttp.ClientSession(connector=connector) as session:
             async with session.get(url, timeout=None) as response:
                 if response.status != 200:
