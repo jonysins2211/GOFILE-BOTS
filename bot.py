@@ -2701,8 +2701,12 @@ async def upload_handler(client, message, status_msg, file_path, file_size, file
             [InlineKeyboardButton("📤 Upload Another", callback_data="go_start")]
         ]
         
-        await status_msg.edit_text(
-            user_text, 
+        await safe_edit_message(
+            status_msg,
+            "✅ Upload finished. Sending result message..."
+        )
+        await message.reply_text(
+            user_text,
             disable_web_page_preview=True,
             reply_markup=InlineKeyboardMarkup(buttons)
         )
