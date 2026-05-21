@@ -43,9 +43,10 @@ OWNER_ID = int(os.environ.get("OWNER_ID", ADMIN_IDS[0] if ADMIN_IDS else 0))
 
 # LIMITS
 MAX_FILE_SIZE = 50 * 1024 * 1024 * 1024  # 50GB
-CHUNK_SIZE = 20 * 1024 * 1024  # 4MB
+CHUNK_SIZE = 64 * 1024 * 1024             # 64MB download chunks (maximises throughput)
+READ_BUFSIZE = 4 * 1024 * 1024            # 4MB aiohttp internal read buffer (was 2KB default)
 
-# GoFile Servers
+# GoFile Servers (fallback list — bot prefers dynamic /getServer API at runtime)
 PRIORITIZED_SERVERS = [
     "upload-na-phx", "upload-ap-sgp", "upload-ap-hkg",
     "upload-ap-tyo", "upload-sa-sao", "upload-eu-fra"
