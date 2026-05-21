@@ -878,7 +878,7 @@ async def about_command(client: Client, message: Message):
     about_text = (
         "ℹ️ **About This Bot**\n\n"
         "🤖 **Bot Name:** GoFile Uploader\n"
-        "🔧 **Developer:** @TG_Bot_Support_bot\n"
+        "🔧 **Developer:** Hawƙeƴe\n"
         "📅 **Version:** 2.0.0"
     )
     
@@ -1442,7 +1442,7 @@ async def user_info_command(client: Client, message: Message):
 async def add_fsub_command(client: Client, message: Message):
     """
     Usage: /addfsub <channel_id|@username|invite_link> [days] [member_limit]
-    Example: /addfsub @TOOLS_BOTS_KING 7 100
+    Example: /addfsub @ML_Files 7 100
     """
     args = message.text.split()[1:]
     
@@ -1453,8 +1453,8 @@ async def add_fsub_command(client: Client, message: Message):
             "Where `channel_ref` can be chat ID, @username, or invite link.\n\n"
             "**Examples:**\n"
             "• `/addfsub -1001234567890`\n"
-            "• `/addfsub @TOOLS_BOTS_KING`\n"
-            "• `/addfsub https://t.me/TOOLS_BOTS_KING 3 200`\n\n"
+            "• `/addfsub @ML_Deals`\n"
+            "• `/addfsub https://t.me/ML_Files 3 200`\n\n"
             "⚠️ Bot must be admin in the channel for Force Sub."
         )
         return
