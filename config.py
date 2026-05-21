@@ -63,4 +63,4 @@ WEB_BASE_URL = os.environ.get("WEB_BASE_URL", "https://go-file-823552364cc6.hero
 ADMIN_DASHBOARD_TOKEN = os.environ.get("ADMIN_DASHBOARD_TOKEN", "")
 
 # Messages
-START_IMG = os.environ.get("START_IMG", "")  # Optional start image URL
+START_IMG = os.environ.get("START_IMG", "https://i.ibb.co/WNKBrnkW/photo-2026-05-21-06-17-05-7642225271881334800.jpg")  # Optional start image URL
