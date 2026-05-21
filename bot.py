@@ -2650,7 +2650,7 @@ async def upload_handler(client, message, status_msg, file_path, file_size, file
             f"📦 **Size:** `{human_readable_size(file_size)}`\n"
             f"📥 **Source:** {source}\n\n"
             f"🔗 **Download Link:**\n{link}\n\n"
-            f"🔹**Powered By : @TOOLS_BOTS_KING **🔸"
+            f"🔹**Powered By : @Movie_Loverzz **🔸"
         )
         
         buttons = [
