@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import aiohttp
+import aiofiles
 import asyncio
 import time
 import mimetypes
@@ -46,6 +47,32 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# ================== GOFILE SERVER SELECTION ==================
+
+async def get_best_gofile_server() -> str:
+    """Query GoFile API for the best available upload server.
+    Falls back to PRIORITIZED_SERVERS[0] if the API call fails."""
+    try:
+        connector = aiohttp.TCPConnector(limit=None, ttl_dns_cache=300, tcp_nodelay=True)
+        async with aiohttp.ClientSession(connector=connector) as session:
+            async with session.get(
+                "https://api.gofile.io/servers",
+                headers=HEADERS,
+                timeout=aiohttp.ClientTimeout(total=10)
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if data.get("status") == "ok":
+                        servers = data["data"].get("servers", [])
+                        if servers:
+                            # Pick the server with the lowest zone load
+                            best = min(servers, key=lambda s: s.get("zoneLoad", 999))
+                            return best["name"]
+    except Exception as e:
+        logger.warning(f"get_best_gofile_server failed: {e}")
+    return PRIORITIZED_SERVERS[0]
+
 
 # ================== BOT INSTANCE ==================
 app = Client(
@@ -2610,16 +2637,24 @@ async def process_url_file(client, url, message, status_msg):
             f"⏱️ **Elapsed:** 0s | /cancel_tg_{message.from_user.id}"
         )
 
-        connector = aiohttp.TCPConnector(limit=None, ttl_dns_cache=300)
-        async with aiohttp.ClientSession(connector=connector) as session:
+        connector = aiohttp.TCPConnector(
+            limit=None,
+            ttl_dns_cache=300,
+            tcp_nodelay=True,
+            enable_cleanup_closed=True
+        )
+        async with aiohttp.ClientSession(
+            connector=connector,
+            read_bufsize=READ_BUFSIZE  # 4MB internal buffer — eliminates tiny kernel reads
+        ) as session:
             async with session.get(url, timeout=None) as response:
                 if response.status != 200:
                     return await safe_edit_message(status_msg, f"❌ URL Error: {response.status}")
                 total = int(response.headers.get("Content-Length", 0) or 0)
                 downloaded = 0
-                with open(file_path, "wb") as f:
+                async with aiofiles.open(file_path, "wb") as f:  # non-blocking disk I/O
                     async for chunk in response.content.iter_chunked(CHUNK_SIZE):
-                        f.write(chunk)
+                        await f.write(chunk)  # never blocks the event loop
                         downloaded += len(chunk)
                         elapsed = max(time.time() - progress_state["start"], 0.001)
                         speed = downloaded / elapsed
@@ -2813,9 +2848,17 @@ async def upload_to_gofile(path, status_msg: Message = None, file_name: str = "f
         if status_msg:
             await maybe_edit_progress(status_msg, progress_state, txt)
 
-    connector = aiohttp.TCPConnector(limit=None, ttl_dns_cache=300)
+    connector = aiohttp.TCPConnector(
+        limit=None,
+        ttl_dns_cache=300,
+        tcp_nodelay=True,
+        enable_cleanup_closed=True
+    )
     async with aiohttp.ClientSession(connector=connector) as session:
-        for server in PRIORITIZED_SERVERS:
+        # Try the best server first, then fall back to the priority list
+        best_server = await get_best_gofile_server()
+        servers_to_try = [best_server] + [s for s in PRIORITIZED_SERVERS if s != best_server]
+        for server in servers_to_try:
             try:
                 url = f"https://{server}.gofile.io/uploadfile"
 
@@ -3025,3 +3068,4 @@ if __name__ == "__main__":
     loop = asyncio.get_event_loop()
 
     loop.run_until_complete(main())
+
