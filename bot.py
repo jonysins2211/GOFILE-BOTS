@@ -61,6 +61,9 @@ download_queue = Queue()
 MAX_CONCURRENT_QUEUE_WORKERS = 10
 queue_worker_tasks = []
 shutdown_in_progress = False
+MAX_TASKS_PER_USER = 2
+USER_ACTIVE_TASKS = {}
+USER_TASKS_LOCK = asyncio.Lock()
 ADMIN_WIZARDS = {}
 ACTION_UNDO = {}
 LIST_PAGE_SIZE = 10
@@ -180,6 +183,24 @@ async def log_admin_action(user_id: int, action: str, metadata: dict = None):
         chat_id=user_id,  # admin actions are logged from private-chat admin workflows
         metadata={"action": action, **(metadata or {})}
     )
+
+async def try_reserve_user_task_slot(user_id: int) -> tuple[bool, int]:
+    user_key = int(user_id)
+    async with USER_TASKS_LOCK:
+        current = int(USER_ACTIVE_TASKS.get(user_key, 0))
+        if current >= MAX_TASKS_PER_USER:
+            return False, current
+        USER_ACTIVE_TASKS[user_key] = current + 1
+        return True, USER_ACTIVE_TASKS[user_key]
+
+async def release_user_task_slot(user_id: int):
+    user_key = int(user_id)
+    async with USER_TASKS_LOCK:
+        current = int(USER_ACTIVE_TASKS.get(user_key, 0))
+        if current <= 1:
+            USER_ACTIVE_TASKS.pop(user_key, None)
+            return
+        USER_ACTIVE_TASKS[user_key] = current - 1
 
 def is_valid_http_url(url: str) -> bool:
     try:
@@ -2417,6 +2438,14 @@ async def url_handler(client: Client, message: Message):
     if shutdown_in_progress:
         await msg.edit_text("⚠️ Bot is restarting. Please send your request again in a moment.")
         return
+    slot_reserved, _ = await try_reserve_user_task_slot(message.from_user.id)
+    if not slot_reserved:
+        await msg.edit_text(
+            "⚠️ **Task Limit Reached**\n\n"
+            "You can run only 2 tasks at a time.\n"
+            "Please wait for one upload to finish, then send a new file or URL."
+        )
+        return
     await download_queue.put(("url", text, message, msg))
 
 # ================== FILE HANDLING ==================
@@ -2463,6 +2492,14 @@ async def file_handler(client: Client, message: Message):
     if shutdown_in_progress:
         await msg.edit_text("⚠️ Bot is restarting. Please send your file again in a moment.")
         return
+    slot_reserved, _ = await try_reserve_user_task_slot(message.from_user.id)
+    if not slot_reserved:
+        await msg.edit_text(
+            "⚠️ **Task Limit Reached**\n\n"
+            "You can run only 2 tasks at a time.\n"
+            "Please wait for one upload to finish, then send a new file or URL."
+        )
+        return
     await download_queue.put(("file", media, message, msg))
 
 # ================== QUEUE PROCESSOR ==================
@@ -2488,6 +2525,12 @@ async def queue_worker(client: Client, worker_number: int):
             except:
                 pass
         finally:
+            try:
+                task_message = queued_task[2]
+                if task_message and task_message.from_user:
+                    await release_user_task_slot(task_message.from_user.id)
+            except Exception as release_error:
+                logger.warning(f"Failed to release user task slot: {release_error}")
             download_queue.task_done()
 
 # ================== FAST DOWNLOAD LOGIC ==================
@@ -2645,7 +2688,7 @@ async def upload_handler(client, message, status_msg, file_path, file_size, file
 
         # ================== 1. USER RESPONSE ==================
         user_text = (
-            f"✅ **Upload Complete!**\n\n"
+            f"✅ **Upload is complete. Download Link is ready.**\n\n"
             f"📄 **File:** `{file_name}`\n"
             f"📦 **Size:** `{human_readable_size(file_size)}`\n"
             f"📥 **Source:** {source}\n\n"
